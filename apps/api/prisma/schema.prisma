@@ -1,0 +1,633 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  ADMIN
+  TEACHER
+  STUDENT
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+}
+
+enum EnrollmentStatus {
+  ACTIVE
+  DROPPED
+  COMPLETED
+}
+
+enum ExamStatus {
+  DRAFT
+  PENDING_APPROVAL
+  APPROVED
+  REJECTED
+  ACTIVE
+  PAUSED
+  COMPLETED
+  CANCELLED
+  ARCHIVED
+}
+
+enum QuestionType {
+  MULTIPLE_CHOICE
+  MULTIPLE_SELECT
+  TRUE_FALSE
+  SUBJECTIVE
+  SUBJECTIVE_SHORT
+  SUBJECTIVE_LONG
+}
+
+enum AttemptStatus {
+  IN_PROGRESS
+  PAUSED
+  SUBMITTED
+  AUTO_SUBMITTED
+  EXPIRED
+  TERMINATED
+}
+
+enum SubmissionReason {
+  MANUAL
+  TIMER_EXPIRED
+  VIOLATION_THRESHOLD
+  ADMIN_FORCE
+  EXAM_CANCELLED
+}
+
+enum IntegrityEventType {
+  TAB_SWITCH
+  WINDOW_BLUR
+  FULLSCREEN_EXIT
+  CAMERA_INTERRUPTED
+  SCREEN_SHARE_INTERRUPTED
+  COPY_ATTEMPT
+  PASTE_ATTEMPT
+  CUT_ATTEMPT
+  SELECT_ALL_ATTEMPT
+  RIGHT_CLICK_ATTEMPT
+  CLIPBOARD_EVENT
+  EXTENSION_HEURISTIC
+  HEARTBEAT_MISSED
+  PERMISSION_DENIED
+}
+
+enum IntegritySeverity {
+  INFO
+  WARNING
+  STRIKE
+  CRITICAL
+}
+
+enum AssignmentSubmissionStatus {
+  SUBMITTED
+  LATE
+  GRADED
+}
+
+enum AssignmentStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+model User {
+  id                         String     @id @default(uuid()) @db.Uuid
+  email                      String     @unique @db.VarChar(255)
+  passwordHash               String     @db.VarChar(255)
+  fullName                   String     @db.VarChar(120)
+  role                       UserRole
+  status                     UserStatus @default(ACTIVE)
+  mustChangePassword         Boolean    @default(false)
+  temporaryPasswordExpiresAt DateTime?
+  temporaryPasswordUsedAt    DateTime?
+  lastLoginAt                DateTime?
+  createdAt                  DateTime   @default(now())
+  updatedAt                  DateTime   @updatedAt
+
+  sessions                      Session[]
+  taughtCourses                 Course[]               @relation("CourseTeacher")
+  enrollments                   Enrollment[]           @relation("StudentEnrollments")
+  createdExams                  Exam[]                 @relation("ExamCreator")
+  approvedExams                 Exam[]                 @relation("ExamApprover")
+  createdAssignments            Assignment[]           @relation("AssignmentCreator")
+  assignmentSubmissions         AssignmentSubmission[] @relation("StudentAssignmentSubmissions")
+  gradedAssignments             AssignmentSubmission[] @relation("AssignmentGrader")
+  publishedAssignmentGrades     AssignmentSubmission[] @relation("AssignmentGradePublisher")
+  uploadedAssignmentAttachments AssignmentAttachment[] @relation("AssignmentAttachmentUploader")
+  uploadedSubmissionAttachments SubmissionAttachment[] @relation("SubmissionAttachmentUploader")
+  examAttempts                  ExamAttempt[]          @relation("StudentAttempts")
+  examSubmissions               ExamSubmission[]       @relation("StudentExamSubmissions")
+  updatedPolicies               ProctoringPolicy[]     @relation("PolicyUpdater")
+  integrityEvents               IntegrityEvent[]       @relation("StudentIntegrityEvents")
+  gradedAnswers                 Grade[]                @relation("AnswerGrader")
+  results                       Result[]               @relation("StudentResults")
+  publishedResults              Result[]               @relation("ResultPublisher")
+  preflightHandshakes           PreflightHandshake[]   @relation("StudentPreflightHandshakes")
+  auditLogs                     AuditLog[]             @relation("AuditActor")
+
+  @@index([role, status])
+  @@index([createdAt])
+}
+
+model Session {
+  id            String    @id @default(uuid()) @db.Uuid
+  userId        String    @db.Uuid
+  tokenHash     String    @unique @db.VarChar(128)
+  csrfTokenHash String    @db.VarChar(128)
+  ipAddress     String?   @db.VarChar(64)
+  userAgent     String?   @db.VarChar(512)
+  expiresAt     DateTime
+  revokedAt     DateTime?
+  createdAt     DateTime  @default(now())
+
+  user                User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  preflightHandshakes PreflightHandshake[]
+
+  @@index([userId, revokedAt])
+  @@index([expiresAt])
+}
+
+model Course {
+  id          String    @id @default(uuid()) @db.Uuid
+  code        String    @unique @db.VarChar(32)
+  title       String    @db.VarChar(160)
+  description String?   @db.Text
+  department  String?   @db.VarChar(80)
+  semester    String?   @db.VarChar(40)
+  capacity    Int?
+  teacherId   String    @db.Uuid
+  isActive    Boolean   @default(true)
+  archivedAt  DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  teacher     User         @relation("CourseTeacher", fields: [teacherId], references: [id], onDelete: Restrict)
+  enrollments Enrollment[]
+  exams       Exam[]
+  assignments Assignment[]
+
+  @@index([teacherId, isActive])
+  @@index([isActive, createdAt])
+}
+
+model Enrollment {
+  id         String           @id @default(uuid()) @db.Uuid
+  courseId   String           @db.Uuid
+  studentId  String           @db.Uuid
+  status     EnrollmentStatus @default(ACTIVE)
+  enrolledAt DateTime         @default(now())
+  updatedAt  DateTime         @updatedAt
+
+  course  Course @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  student User   @relation("StudentEnrollments", fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@unique([courseId, studentId])
+  @@index([studentId, status])
+}
+
+model Exam {
+  id                     String     @id @default(uuid()) @db.Uuid
+  courseId               String     @db.Uuid
+  createdById            String     @db.Uuid
+  approvedById           String?    @db.Uuid
+  parentExamId           String?    @db.Uuid
+  version                Int        @default(1)
+  title                  String     @db.VarChar(200)
+  description            String?    @db.Text
+  instructions           String?    @db.Text
+  status                 ExamStatus @default(DRAFT)
+  durationMinutes        Int
+  totalMarks             Decimal    @db.Decimal(8, 2)
+  passingMarks           Decimal    @db.Decimal(8, 2)
+  maxAttempts            Int        @default(1)
+  windowStart            DateTime
+  windowEnd              DateTime
+  shuffleQuestions       Boolean    @default(false)
+  shuffleOptions         Boolean    @default(false)
+  allowReview            Boolean    @default(true)
+  isEnabled              Boolean    @default(true)
+  allowUnproctoredDev    Boolean    @default(false)
+  rejectionReason        String?    @db.Text
+  cancellationReason     String?    @db.Text
+  submittedForApprovalAt DateTime?
+  approvedAt             DateTime?
+  rejectedAt             DateTime?
+  activatedAt            DateTime?
+  pausedAt               DateTime?
+  cancelledAt            DateTime?
+  resultsPublishedAt     DateTime?
+  createdAt              DateTime   @default(now())
+  updatedAt              DateTime   @updatedAt
+
+  course           Course            @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  createdBy        User              @relation("ExamCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  approvedBy       User?             @relation("ExamApprover", fields: [approvedById], references: [id], onDelete: SetNull)
+  parentExam       Exam?             @relation("ExamVersions", fields: [parentExamId], references: [id], onDelete: SetNull)
+  childVersions    Exam[]            @relation("ExamVersions")
+  questions        Question[]
+  proctoringPolicy ProctoringPolicy?
+  attempts            ExamAttempt[]
+  submissions         ExamSubmission[]
+  integrityEvents     IntegrityEvent[]
+  preflightHandshakes PreflightHandshake[]
+  results             Result[]
+
+  @@index([courseId, status])
+  @@index([windowStart, windowEnd])
+  @@index([status, isEnabled])
+}
+
+model Question {
+  id                String       @id @default(uuid()) @db.Uuid
+  examId            String       @db.Uuid
+  orderIndex        Int
+  type              QuestionType
+  prompt            String       @db.Text
+  explanation       String?      @db.Text
+  marks             Decimal      @db.Decimal(6, 2)
+  negativeMarks     Decimal      @default(0) @db.Decimal(6, 2)
+  isRequired        Boolean      @default(false)
+  expectedWordLimit Int?
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+
+  exam    Exam             @relation(fields: [examId], references: [id], onDelete: Cascade)
+  options QuestionOption[]
+  answers ExamAnswer[]
+  grades  Grade[]
+
+  @@unique([examId, orderIndex])
+  @@index([examId, type])
+}
+
+model QuestionOption {
+  id         String   @id @default(uuid()) @db.Uuid
+  questionId String   @db.Uuid
+  orderIndex Int
+  label      String   @db.Text
+  isCorrect  Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  question Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@unique([questionId, orderIndex])
+}
+
+model Assignment {
+  id                   String           @id @default(uuid()) @db.Uuid
+  courseId             String           @db.Uuid
+  createdById          String           @db.Uuid
+  title                String           @db.VarChar(200)
+  description          String?          @db.Text
+  instructions         String?          @db.Text
+  attachmentName       String?          @db.VarChar(255)
+  attachmentPath       String?          @db.VarChar(512)
+  attachmentMimeType   String?          @db.VarChar(128)
+  attachmentSizeBytes  Int?
+  maxMarks             Decimal          @db.Decimal(6, 2)
+  dueAt                DateTime
+  allowLateSubmissions Boolean          @default(false)
+  lateDueAt            DateTime?
+  allowResubmission    Boolean          @default(false)
+  status               AssignmentStatus @default(DRAFT)
+  isPublished          Boolean          @default(false)
+  publishedAt          DateTime?
+  archivedAt           DateTime?
+  createdAt            DateTime         @default(now())
+  updatedAt            DateTime         @updatedAt
+
+  course      Course                 @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  createdBy   User                   @relation("AssignmentCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  attachments AssignmentAttachment[]
+  submissions AssignmentSubmission[]
+
+  @@index([courseId, dueAt])
+  @@index([courseId, status])
+}
+
+model AssignmentAttachment {
+  id           String   @id @default(uuid()) @db.Uuid
+  assignmentId String   @db.Uuid
+  uploadedById String   @db.Uuid
+  originalName String   @db.VarChar(255)
+  storageKey   String   @unique @db.VarChar(512)
+  mimeType     String   @db.VarChar(128)
+  sizeBytes    Int
+  sha256       String   @db.VarChar(64)
+  createdAt    DateTime @default(now())
+
+  assignment Assignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  uploadedBy User       @relation("AssignmentAttachmentUploader", fields: [uploadedById], references: [id], onDelete: Restrict)
+
+  @@index([assignmentId])
+}
+
+model AssignmentSubmission {
+  id                 String                     @id @default(uuid()) @db.Uuid
+  assignmentId       String                     @db.Uuid
+  studentId          String                     @db.Uuid
+  notes              String?                    @db.Text
+  fileName           String?                    @db.VarChar(255)
+  filePath           String?                    @db.VarChar(512)
+  fileMimeType       String?                    @db.VarChar(128)
+  fileSizeBytes      Int?
+  status             AssignmentSubmissionStatus @default(SUBMITTED)
+  score              Decimal?                   @db.Decimal(6, 2)
+  feedback           String?                    @db.Text
+  gradedById         String?                    @db.Uuid
+  isGradePublished   Boolean                    @default(false)
+  gradePublishedAt   DateTime?
+  gradePublishedById String?                    @db.Uuid
+  submissionCount    Int                        @default(1)
+  submittedAt        DateTime                   @default(now())
+  gradedAt           DateTime?
+  updatedAt          DateTime                   @updatedAt
+
+  assignment       Assignment             @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  student          User                   @relation("StudentAssignmentSubmissions", fields: [studentId], references: [id], onDelete: Cascade)
+  gradedBy         User?                  @relation("AssignmentGrader", fields: [gradedById], references: [id], onDelete: SetNull)
+  gradePublishedBy User?                  @relation("AssignmentGradePublisher", fields: [gradePublishedById], references: [id], onDelete: SetNull)
+  attachments      SubmissionAttachment[]
+
+  @@unique([assignmentId, studentId])
+  @@index([studentId, submittedAt])
+}
+
+model SubmissionAttachment {
+  id           String   @id @default(uuid()) @db.Uuid
+  submissionId String   @db.Uuid
+  uploadedById String   @db.Uuid
+  originalName String   @db.VarChar(255)
+  storageKey   String   @unique @db.VarChar(512)
+  mimeType     String   @db.VarChar(128)
+  sizeBytes    Int
+  sha256       String   @db.VarChar(64)
+  createdAt    DateTime @default(now())
+
+  submission AssignmentSubmission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+  uploadedBy User                 @relation("SubmissionAttachmentUploader", fields: [uploadedById], references: [id], onDelete: Restrict)
+
+  @@index([submissionId])
+}
+
+model ExamAttempt {
+  id                    String            @id @default(uuid()) @db.Uuid
+  examId                String            @db.Uuid
+  studentId             String            @db.Uuid
+  attemptNumber         Int               @default(1)
+  examVersion           Int               @default(1)
+  policyVersion         Int               @default(1)
+  revision              Int               @default(1)
+  status                AttemptStatus     @default(IN_PROGRESS)
+  finalizationReason    SubmissionReason?
+  startedAt             DateTime          @default(now())
+  expiresAt             DateTime
+  pausedAt              DateTime?
+  pauseReason           String?           @db.VarChar(255)
+  resumedAt             DateTime?
+  lastHeartbeatAt       DateTime          @default(now())
+  lastHeartbeatSeq      Int               @default(0)
+  lastMediaHeartbeatAt  DateTime?
+  mediaGraceStartedAt   DateTime?
+  heartbeatOutageActive Boolean           @default(false)
+  mediaLossActive       Boolean           @default(false)
+  cameraActive          Boolean           @default(false)
+  screenShareActive     Boolean           @default(false)
+  fullscreenActive      Boolean           @default(false)
+  violationCount        Int               @default(0)
+  warningCount          Int               @default(0)
+  strikeThreshold       Int               @default(2)
+  isLocked              Boolean           @default(false)
+  preflightHandshakeId  String?           @db.Uuid
+  questionSnapshotJson  Json?
+  answerKeySnapshotJson Json?
+  policySnapshotJson    Json?
+  submittedAt           DateTime?
+  createdAt             DateTime          @default(now())
+  updatedAt             DateTime          @updatedAt
+
+  exam            Exam             @relation(fields: [examId], references: [id], onDelete: Cascade)
+  student         User             @relation("StudentAttempts", fields: [studentId], references: [id], onDelete: Cascade)
+  answers         ExamAnswer[]
+  submission      ExamSubmission?
+  integrityEvents IntegrityEvent[]
+  grades          Grade[]
+  result          Result?
+
+  @@unique([examId, studentId, attemptNumber])
+  @@index([studentId, status])
+  @@index([examId, status])
+  @@index([status, expiresAt])
+}
+
+model ExamAnswer {
+  id                 String   @id @default(uuid()) @db.Uuid
+  attemptId          String   @db.Uuid
+  questionId         String   @db.Uuid
+  selectedOptionIds  String[] @default([])
+  subjectiveText     String?  @db.Text
+  markedForReview    Boolean  @default(false)
+  isFinalized        Boolean  @default(false)
+  revision           Int      @default(1)
+  lastClientSequence Int      @default(0)
+  answeredAt         DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  attempt  ExamAttempt @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  question Question    @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@unique([attemptId, questionId])
+  @@index([attemptId, isFinalized])
+}
+
+model ExamSubmission {
+  id                  String           @id @default(uuid()) @db.Uuid
+  attemptId           String           @unique @db.Uuid
+  examId              String           @db.Uuid
+  studentId           String           @db.Uuid
+  reason              SubmissionReason
+  receiptCode         String           @unique @db.VarChar(64)
+  finalViolationCount Int              @default(0)
+  snapshotAnswersJson Json
+  submittedAt         DateTime         @default(now())
+  createdAt           DateTime         @default(now())
+
+  attempt ExamAttempt @relation(fields: [attemptId], references: [id], onDelete: Restrict)
+  exam    Exam        @relation(fields: [examId], references: [id], onDelete: Cascade)
+  student User        @relation("StudentExamSubmissions", fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@index([examId, submittedAt])
+  @@index([studentId, submittedAt])
+}
+
+model ProctoringPolicy {
+  id                            String   @id @default(uuid()) @db.Uuid
+  examId                        String?  @unique @db.Uuid
+  isInstitutionalDefault        Boolean  @default(false)
+  isActive                      Boolean  @default(true)
+  version                       Int      @default(1)
+  updatedById                   String   @db.Uuid
+  requireWebcam                 Boolean  @default(true)
+  requireScreenShare            Boolean  @default(true)
+  requireFullscreen             Boolean  @default(true)
+  allowedScreenSurface          String   @default("ANY") @db.VarChar(24)
+  detectTabSwitch               Boolean  @default(true)
+  detectWindowBlur              Boolean  @default(true)
+  detectFullscreenExit          Boolean  @default(true)
+  detectCameraInterruption      Boolean  @default(true)
+  detectScreenShareInterruption Boolean  @default(true)
+  restrictCopyPasteCut          Boolean  @default(true)
+  restrictSelectAll             Boolean  @default(true)
+  restrictRightClick            Boolean  @default(true)
+  restrictTextSelection         Boolean  @default(true)
+  detectClipboard               Boolean  @default(true)
+  detectExtensionsHeuristic     Boolean  @default(true)
+  extensionStrikeMode           String   @default("STRIKE") @db.VarChar(24)
+  monitorConnectionHeartbeat    Boolean  @default(true)
+  monitorMediaHeartbeat         Boolean  @default(true)
+  heartbeatIntervalSeconds      Int      @default(10)
+  heartbeatTimeoutSeconds       Int      @default(30)
+  heartbeatGraceSeconds         Int      @default(15)
+  mediaGraceSeconds             Int      @default(8)
+  dedupWindowSeconds            Int      @default(3)
+  violationThreshold            Int      @default(2)
+  pauseOnMediaLoss              Boolean  @default(true)
+  createdAt                     DateTime @default(now())
+  updatedAt                     DateTime @updatedAt
+
+  exam      Exam? @relation(fields: [examId], references: [id], onDelete: Cascade)
+  updatedBy User  @relation("PolicyUpdater", fields: [updatedById], references: [id], onDelete: Restrict)
+
+  @@index([isInstitutionalDefault])
+}
+
+model PreflightHandshake {
+  id                String    @id @default(uuid()) @db.Uuid
+  examId            String    @db.Uuid
+  studentId         String    @db.Uuid
+  sessionId         String    @db.Uuid
+  tokenHash         String    @unique @db.VarChar(128)
+  policyVersion     Int
+  policySnapshotJson Json
+  cameraStatus      String    @db.VarChar(32)
+  screenShareStatus String    @db.VarChar(32)
+  displaySurface    String?   @db.VarChar(32)
+  fullscreenStatus  String    @db.VarChar(32)
+  connectivityOk    Boolean   @default(true)
+  consentAccepted   Boolean   @default(false)
+  expiresAt         DateTime
+  consumedAt        DateTime?
+  consumedAttemptId String?   @db.Uuid
+  createdAt         DateTime  @default(now())
+
+  exam    Exam    @relation(fields: [examId], references: [id], onDelete: Cascade)
+  student User    @relation("StudentPreflightHandshakes", fields: [studentId], references: [id], onDelete: Cascade)
+  session Session @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([examId, studentId, expiresAt])
+  @@index([sessionId])
+}
+
+model IntegrityEvent {
+  id                   String             @id @default(uuid()) @db.Uuid
+  attemptId            String             @db.Uuid
+  examId               String             @db.Uuid
+  studentId            String             @db.Uuid
+  clientEventId        String             @db.VarChar(128)
+  eventType            IntegrityEventType
+  severity             IntegritySeverity
+  source               String             @default("CLIENT") @db.VarChar(32)
+  confidence           String             @default("OBSERVED") @db.VarChar(32)
+  ruleEnabled          Boolean            @default(true)
+  countedAsStrike      Boolean            @default(false)
+  violationNumberAfter Int?
+  dedupGroupKey        String?            @db.VarChar(64)
+  incidentKey          String?            @db.VarChar(96)
+  deduplicatedIntoId   String?            @db.Uuid
+  description          String             @db.VarChar(500)
+  metadata             Json?
+  occurredAt           DateTime           @default(now())
+  createdAt            DateTime           @default(now())
+
+  attempt ExamAttempt @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  exam    Exam        @relation(fields: [examId], references: [id], onDelete: Cascade)
+  student User        @relation("StudentIntegrityEvents", fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@unique([attemptId, clientEventId])
+  @@index([attemptId, dedupGroupKey, occurredAt])
+  @@index([examId, severity, occurredAt])
+}
+
+model Grade {
+  id           String   @id @default(uuid()) @db.Uuid
+  attemptId    String   @db.Uuid
+  questionId   String   @db.Uuid
+  gradedById   String?  @db.Uuid
+  awardedMarks Decimal  @db.Decimal(6, 2)
+  maxMarks     Decimal  @db.Decimal(6, 2)
+  isAutoGraded Boolean  @default(false)
+  feedback     String?  @db.Text
+  gradedAt     DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  attempt  ExamAttempt @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  question Question    @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  gradedBy User?       @relation("AnswerGrader", fields: [gradedById], references: [id], onDelete: SetNull)
+
+  @@unique([attemptId, questionId])
+  @@index([attemptId])
+}
+
+model Result {
+  id            String    @id @default(uuid()) @db.Uuid
+  examId        String    @db.Uuid
+  attemptId     String    @unique @db.Uuid
+  studentId     String    @db.Uuid
+  obtainedMarks Decimal   @db.Decimal(8, 2)
+  totalMarks    Decimal   @db.Decimal(8, 2)
+  percentage    Decimal   @db.Decimal(5, 2)
+  passed        Boolean
+  isPublished   Boolean   @default(false)
+  publishedAt   DateTime?
+  publishedById String?   @db.Uuid
+  remarks       String?   @db.Text
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  exam        Exam        @relation(fields: [examId], references: [id], onDelete: Cascade)
+  attempt     ExamAttempt @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  student     User        @relation("StudentResults", fields: [studentId], references: [id], onDelete: Cascade)
+  publishedBy User?       @relation("ResultPublisher", fields: [publishedById], references: [id], onDelete: SetNull)
+
+  @@unique([examId, studentId])
+  @@index([studentId, isPublished])
+}
+
+model AuditLog {
+  id         String    @id @default(uuid()) @db.Uuid
+  actorId    String?   @db.Uuid
+  actorRole  UserRole?
+  action     String    @db.VarChar(80)
+  entityType String    @db.VarChar(64)
+  entityId   String?   @db.VarChar(64)
+  ipAddress  String?   @db.VarChar(64)
+  userAgent  String?   @db.VarChar(512)
+  metadata   Json?
+  createdAt  DateTime  @default(now())
+
+  actor User? @relation("AuditActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([action, createdAt])
+  @@index([actorId, createdAt])
+  @@index([entityType, entityId])
+}
