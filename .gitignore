@@ -1,0 +1,43 @@
+# Dependencies & build artifacts
+node_modules/
+node_modules.nosync/
+dist/
+build/
+.vite/
+*.tsbuildinfo
+
+# Environment & secrets (never commit real credentials)
+.env
+.env.*
+!.env.example
+prisma/.env
+apps/**/.env
+apps/**/.env.*
+*.pem
+*.key
+secrets/
+
+# Storage, uploads & logs
+storage/
+uploads/
+logs/
+*.log
+
+# Testing & coverage
+coverage/
+playwright-report/
+test-results/
+.nyc_output/
+
+# Prisma generated artifacts if emitted locally
+apps/api/src/generated/
+
+# OS & editor files
+.DS_Store
+.AppleDouble
+.LSOverride
+*.swp
+*.swo
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
