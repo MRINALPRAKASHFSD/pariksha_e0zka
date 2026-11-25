@@ -1,0 +1,44 @@
+{
+  "name": "@pariksha/api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/server.js",
+    "typecheck": "tsc -p tsconfig.typecheck.json --noEmit",
+    "test": "vitest run",
+    "db:generate": "node scripts/prisma-cli.mjs generate",
+    "db:migrate": "node scripts/prisma-cli.mjs migrate dev",
+    "db:migrate:deploy": "node scripts/prisma-cli.mjs migrate deploy",
+    "db:status": "node scripts/prisma-cli.mjs migrate status",
+    "db:seed": "tsx prisma/seed.ts"
+  },
+  "dependencies": {
+    "@pariksha/shared": "0.1.0",
+    "@prisma/client": "^6.5.0",
+    "cookie-parser": "^1.4.7",
+    "cors": "^2.8.5",
+    "csv-parse": "^7.0.3",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "express-rate-limit": "^7.5.0",
+    "helmet": "^8.1.0",
+    "multer": "^2.0.0",
+    "socket.io": "^4.8.1",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/cookie-parser": "^1.4.8",
+    "@types/cors": "^2.8.17",
+    "@types/express": "^4.17.21",
+    "@types/multer": "^1.4.12",
+    "@types/node": "^22.13.10",
+    "@types/supertest": "^6.0.3",
+    "prisma": "^6.5.0",
+    "supertest": "^7.0.0",
+    "tsx": "^4.19.3",
+    "vitest": "^5.1.2"
+  }
+}
