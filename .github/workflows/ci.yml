@@ -1,0 +1,64 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  verify:
+    name: Typecheck, Lint, Build & Integration Suite
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres_ci_password
+          POSTGRES_DB: pariksha_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres -d pariksha_test"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=10
+
+    env:
+      NODE_ENV: test
+      PORT: 4001
+      CLIENT_ORIGIN: http://localhost:5174
+      DATABASE_URL: postgresql://postgres:postgres_ci_password@localhost:5432/pariksha_test?schema=public
+      TEST_DATABASE_URL: postgresql://postgres:postgres_ci_password@localhost:5432/pariksha_test?schema=public
+      SESSION_SECRET: ci_test_only_session_secret_64_chars_minimum_entropy_placeholder_01
+      CSRF_SECRET: ci_test_only_csrf_secret_64_chars_minimum_entropy_placeholder_0002
+      UPLOAD_DIR: /tmp/pariksha-ci-uploads
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client and deploy migrations
+        run: |
+          npm run db:generate
+          npm run db:migrate:deploy
+
+      - name: Run typecheck, lint, and build
+        run: |
+          npm run typecheck
+          npm run lint
+          npm run build
+
+      - name: Run unit and integration tests
+        run: npm run test
