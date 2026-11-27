@@ -2,7 +2,7 @@
   "name": "pariksha-monorepo",
   "version": "0.1.0",
   "private": true,
-  "description": "Pariksha — Full-Stack Examination and Intelligent Proctoring Platform",
+  "description": "Pariksha: online examination, assignment and browser proctoring platform",
   "workspaces": [
     "packages/*",
     "apps/*"
@@ -10,9 +10,10 @@
   "scripts": {
     "dev": "concurrently -n api,web -c cyan,magenta \"npm run dev -w @pariksha/api\" \"npm run dev -w @pariksha/web\"",
     "build": "npm run build -w @pariksha/shared && npm run build -w @pariksha/api && npm run build -w @pariksha/web",
-    "typecheck": "npm run typecheck -w @pariksha/shared && npm run typecheck -w @pariksha/api && npm run typecheck -w @pariksha/web",
+    "build:shared": "npm run build -w @pariksha/shared",
+    "typecheck": "npm run build:shared && npm run typecheck -w @pariksha/shared && npm run typecheck -w @pariksha/api && npm run typecheck -w @pariksha/web",
     "lint": "eslint .",
-    "test": "npm run test -w @pariksha/shared && npm run test -w @pariksha/api && npm run test -w @pariksha/web",
+    "test": "npm run build:shared && npm run test -w @pariksha/shared && npm run test -w @pariksha/api && npm run test -w @pariksha/web",
     "db:generate": "npm run db:generate -w @pariksha/api",
     "db:migrate": "npm run db:migrate -w @pariksha/api",
     "db:migrate:deploy": "npm run db:migrate:deploy -w @pariksha/api",
