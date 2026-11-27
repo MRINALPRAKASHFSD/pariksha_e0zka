@@ -34,7 +34,7 @@ jobs:
       TEST_DATABASE_URL: postgresql://postgres:postgres_ci_password@localhost:5432/pariksha_test?schema=public
       SESSION_SECRET: ci_test_only_session_secret_64_chars_minimum_entropy_placeholder_01
       CSRF_SECRET: ci_test_only_csrf_secret_64_chars_minimum_entropy_placeholder_0002
-      UPLOAD_DIR: /tmp/pariksha-ci-uploads
+      UPLOAD_DIR: /tmp/pariksha-test-uploads
 
     steps:
       - name: Checkout repository
